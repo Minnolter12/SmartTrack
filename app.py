@@ -13,7 +13,7 @@ class MainApp(ctk.CTk):
 
         # This is the top app frame
         self.top_frame = ctk.CTkFrame(
-            self, corner_radius=5, height = 60
+            self, corner_radius=5, height=60
         )
         self.top_frame.place(
             relx=0.5,
@@ -21,8 +21,6 @@ class MainApp(ctk.CTk):
             anchor="n"
         )
 
-        # This is the Name icon placed on the top frame, 
-        # on the left side
         self.name_icon = ctk.CTkLabel(
             self.top_frame,
             text="SmartTrack",
@@ -32,18 +30,23 @@ class MainApp(ctk.CTk):
             x=10, relx=0.01, rely=0.5, anchor="w"
         )
 
+        self.dash_board = ctk.CTkFrame(
+            self, corner_radius=10, height=250, width=800
+        )
+        self.dash_board.place(
+            y=75, relx=1, anchor="n"
+        )
+
         self.home_widget = ClickableHomeWidget(
             self, titleText="Home", 
             on_click=self.on_home_click
         )
         self.home_widget.place(
-            relx=0.5,
-            rely=0.5,
-            anchor="center"
+            x=200, y=200, 
         )
 
         self.course_widget = ClickableHomeWidget(
-            self, titleText="Courses",
+            self, titleText="Courses", frameHeight=50, frameWidth=70,
             on_click=self.on_courses_click
         )
         self.course_widget.place(       
@@ -61,8 +64,8 @@ class MainApp(ctk.CTk):
 
 class ClickableHomeWidget(ctk.CTkFrame):
 
-    def __init__(self, master, titleText, on_click=None, **kwargs):
-        super().__init__(master, cursor="hand2", corner_radius=10, **kwargs)
+    def __init__(self, master, titleText, on_click=None, frameHeight=100, frameWidth=200):
+        super().__init__(master, cursor="hand2", height=frameHeight, width=frameWidth, corner_radius=10)
         self.on_click = on_click
 
         self.title_label = ctk.CTkLabel(
@@ -78,6 +81,10 @@ class ClickableHomeWidget(ctk.CTkFrame):
     def _handle_click(self, event=None):
         if self.on_click:
             self.on_click()
+
+
+
+
 
         
 
