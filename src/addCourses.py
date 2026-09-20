@@ -38,7 +38,7 @@ class Course:
         if credits >= 0 and credits <= 6:
             self.__max_credits = credits
         else:
-            raise ValueError("Credits cannot be greater than 6 nor can it be less than")
+            raise ValueError("Credits cannot be greater than 6 nor can it be less than 0!")
 
     @property
     def classes_attended(self) -> int:
@@ -48,7 +48,7 @@ class Course:
     def classes_attended(self, value: int) -> None:
         if value < 0 or value > self.total_classes:
             raise ValueError("Attended classes cannot be more than number of classes attended")
-        Course.__classes_attended = value
+        self.__classes_attended = value
 
 
 
@@ -73,13 +73,4 @@ class Semester:
 
     def add_course(self, course: Course) -> None:
         self.courses.append(course)
-
-
-sem1 = Semester(1, 75)
-
-electrical_enginerring = Course(
-    "Electrical Engineering", 4, 4, 10, 75
-)
-
-sem1.add_course(electrical_enginerring)
 
