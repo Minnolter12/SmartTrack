@@ -2,9 +2,6 @@ import functools
 
 DEV_MODE: bool = True
 
-# is it better to have a mutable list of semesters? 
-semesters: list = []
-
 def debug_mode(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -14,7 +11,8 @@ def debug_mode(func):
             return None
     return wrapper
 
-class AttendanceNotValidError(Exception): pass
+class AttendanceNotValidError(Exception):
+    pass
 
 class Course:
 
@@ -24,13 +22,15 @@ class Course:
         self,
         name: str,
         credits: int,
-        classes_attended: int = 0,
-        total_classes: int = 0,
+        classes_attended: int = 0, 
+        classes_happened: int = 0, # used to calculate percentages
+        total_classes: int = 0, # used during prediction
         min_attendance: int | None = None,
     ) -> None:
         self.name = name
         self.credits = credits
         self.min_attendance = min_attendance
+        self.classes_happened = classes_happened
 
         self.total_classes = total_classes
         self.classes_attended = classes_attended
@@ -69,10 +69,15 @@ class Course:
         
         self.__classes_attended = value
 
-    def log_attendance(self) -> None:
-        if self.classes_attended + 1 > self.total_classes:
-            raise ValueError("Cannot attend more classes than the total classes available.")
-        self.classes_attended += 1
+    def log_attendance(self, class_attended: bool) -> None:
+        if self.classes_attended > self.classes_happened:
+            raise AttendanceNotValidError()
+        
+        if class_attended:
+            self.classes_happened += 1
+            self.classes_attended += 1
+
+        else: self.classes_happened += 1
 
     def calculate_total_classes(self, months: int = 0, weeks: int = 0) -> None:
         if months < 0 or weeks < 0:
@@ -80,8 +85,15 @@ class Course:
 
         self.total_classes = (months * 4 * self.credits) + (weeks * self.credits)
 
-    def attendance_percentage(self) -> any:
-        return (self.classes_attended / self.total_classes) * 100
+    def attendance_percentage(self, format: type = float) -> int | float:
+        if self.classes_happened == 0:
+            raise ZeroDivisionError("Classes havent happened yet cannot divide by 0")
+        
+        if format is int:
+            return int((self.classes_attended / self.classes_happened) * 100)
+        else: 
+            return float(f"{(self.classes_attended / self.classes_happened) * 100:.2f}")
+
 
 
 class Semester:
@@ -125,10 +137,10 @@ semester_one.add_course(
 course = semester_one.courses[0]
 course.calculate_total_classes(5, 2)
 
-course.log_attendance()
-course.log_attendance()
+course.log_attendance(True)
+course.log_attendance(True)
 
 print(course.attendance_percentage())
 
-course.log_attendance()
+course.log_attendance(False)
 print(course.attendance_percentage())
