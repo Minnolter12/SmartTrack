@@ -1,4 +1,4 @@
-from app import MainApp
+from ui.homescreen import MainApp
 
 def main():
     app = MainApp()
