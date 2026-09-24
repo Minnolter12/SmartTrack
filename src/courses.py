@@ -1,4 +1,5 @@
 import functools
+import math
 
 DEV_MODE: bool = True
 
@@ -7,31 +8,31 @@ def debug_mode(func):
     def wrapper(*args, **kwargs):
         if DEV_MODE:
             return func(*args, **kwargs)
-        else:
-            return None
+        return None
     return wrapper
 
 class AttendanceNotValidError(Exception):
     pass
 
 class Course:
-
     __max_credits: int = 6
 
     def __init__(
         self,
         name: str,
         credits: int,
+        periods: int = 1,  
         classes_attended: int = 0, 
-        classes_happened: int = 0, # used to calculate percentages
-        total_classes: int = 0, # used during prediction
-        min_attendance: int | None = None,
+        classes_happened: int = 0, 
+        total_classes: int = 0, 
+        min_attendance: int | None = 75,
     ) -> None:
         self.name = name
+        self.periods = periods
         self.credits = credits
         self.min_attendance = min_attendance
-        self.classes_happened = classes_happened
-
+        
+        self._classes_happened = classes_happened
         self.total_classes = total_classes
         self.classes_attended = classes_attended
 
@@ -46,58 +47,95 @@ class Course:
         self.__total_classes = value
 
     @property
-    def max_credits(self) -> int:
-        return self.__max_credits
+    def classes_happened(self) -> int:
+        return self._classes_happened
 
-
-    @max_credits.setter
-    def max_credits(self, credits) -> None:
-        if credits >= 0 and credits <= 6:
-            self.__max_credits = credits
-        else:
-            raise ValueError("Credits cannot be greater than 6 nor can it be less than 0!")
+    @classes_happened.setter
+    def classes_happened(self, value: int) -> None:
+        if value < 0:
+            raise ValueError("Classes happened cannot be negative.")
+        self._classes_happened = value
 
     @property
     def classes_attended(self) -> int:
         return self.__classes_attended
 
-
     @classes_attended.setter
     def classes_attended(self, value: int) -> None:
-        if value < 0 or value > self.total_classes:
-            raise ValueError("Attended classes cannot be more than total classes.")
-        
+        if value < 0 or value > self.classes_happened:
+            raise ValueError("Attended periods cannot exceed total happened periods.")
         self.__classes_attended = value
 
     def log_attendance(self, class_attended: bool) -> None:
-        if self.classes_attended > self.classes_happened:
-            raise AttendanceNotValidError()
-        
+        if not isinstance(class_attended, bool):
+            raise TypeError("Attendance must be a strict boolean value (True/False).")
+            
         if class_attended:
-            self.classes_happened += 1
-            self.classes_attended += 1
-
-        else: self.classes_happened += 1
+            self.classes_happened += self.periods
+            self.classes_attended += self.periods
+        else: 
+            self.classes_happened += self.periods
 
     def calculate_total_classes(self, months: int = 0, weeks: int = 0) -> None:
         if months < 0 or weeks < 0:
             raise ValueError("Months and weeks cannot be lesser than 0")
-
         self.total_classes = (months * 4 * self.credits) + (weeks * self.credits)
 
     def attendance_percentage(self, format: type = float) -> int | float:
         if self.classes_happened == 0:
-            raise ZeroDivisionError("Classes havent happened yet cannot divide by 0")
-        
-        if format is int:
-            return int((self.classes_attended / self.classes_happened) * 100)
-        else: 
-            return float(f"{(self.classes_attended / self.classes_happened) * 100:.2f}")
+            raise ZeroDivisionError("No periods have occurred yet; cannot calculate percentage.")
 
+        percentage = (self.classes_attended / self.classes_happened) * 100
+        if format is int:
+            return int(percentage)
+        elif format is float:
+            return float(f"{percentage:.2f}")
+        else: 
+            raise TypeError("Invalid format type requested.")
+
+    def calculate_safe_leaves(self) -> int:
+        if self.classes_happened == 0:
+            return 0
+        target = self.min_attendance if self.min_attendance is not None else 75
+        target_fraction = target / 100
+        
+
+        max_total_absences = math.floor(self.classes_attended / target_fraction) - self.classes_happened
+        if max_total_absences <= 0:
+            return 0
+        return max_total_absences // self.periods  
+
+    def regain_min_attendance(self) -> int | bool:
+        target = self.min_attendance if self.min_attendance is not None else 75
+        target_fraction = target / 100
+        
+        current_pct = (self.classes_attended / self.classes_happened) * 100 if self.classes_happened > 0 else 0
+        if current_pct >= target:
+            return 0
+            
+        if target_fraction >= 1.0:
+            return False  
+            
+        required_periods = math.ceil((target_fraction * self.classes_happened - self.classes_attended) / (1 - target_fraction))
+        required_classes = math.ceil(required_periods / self.periods)
+        
+        remaining_classes = self.total_classes - (self.classes_happened // self.periods)
+        if required_classes <= remaining_classes:
+            return required_classes
+        return False
+
+
+class TheoryCourses(Course):
+    def __init__(self, name: str, credits: int, periods_per_theory_class: int = 1, **kwargs) -> None:
+        super().__init__(name=name, credits=credits, periods=periods_per_theory_class, **kwargs)
+
+
+class LabCourses(Course):
+    def __init__(self, name: str, credits: int, periods_per_lab: int = 3, **kwargs) -> None:
+        super().__init__(name=name, credits=credits, periods=periods_per_lab, **kwargs)
 
 
 class Semester:
-
     def __init__(self, sem_number: int, min_attendance: int = 75) -> None:
         self.sem_number = sem_number
         self.min_attendance = min_attendance
@@ -111,8 +149,7 @@ class Semester:
     def min_attendance(self, attendance: int) -> None:
         if attendance > 100 or attendance < 0:
             raise AttendanceNotValidError("Attendance must behave like percentages")
-
-        self.__min_attendance = attendance
+        self.__none_or_val = attendance
 
     def add_course(self, course: Course) -> None:
         self.courses.append(course)
@@ -120,27 +157,12 @@ class Semester:
     @debug_mode
     def print_course(self) -> None:
         for course in self.courses:
-            print(f"Course: {course.name}")
-            print(f"Credits: {course.credits}")
-            print(f"Attendance: {course.classes_attended}/{course.total_classes}")
+            print(f"Course: {course.name} ({type(course).__name__})")
+            print(f"Credits: {course.credits} | Periods/Slot: {course.periods}")
+            print(f"Attendance: {course.classes_attended}/{course.classes_happened} periods")
+            try:
+                print(f"Percentage: {course.attendance_percentage()}%")
+                print(f"Safe Leaves Remaining: {course.calculate_safe_leaves()} slots")
+            except ZeroDivisionError:
+                print("Percentage: N/A")
             print("--------------------------------------")
-
-
-semester_one = Semester(1, 75)
-
-semester_one.add_course(
-    course=Course(
-        "Signals and Systems", 4, min_attendance=75
-    )
-)
-
-course = semester_one.courses[0]
-course.calculate_total_classes(5, 2)
-
-course.log_attendance(True)
-course.log_attendance(True)
-
-print(course.attendance_percentage())
-
-course.log_attendance(False)
-print(course.attendance_percentage())
