@@ -1,12 +1,12 @@
 import functools
 import math
 
-DEV_MODE: bool = True
+DEVELOPER_MODE: bool = True
 
 def debug_mode(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        if DEV_MODE:
+        if DEVELOPER_MODE:
             return func(*args, **kwargs)
         return None
     return wrapper
@@ -126,16 +126,36 @@ class Course:
 
 
 class TheoryCourses(Course):
-    def __init__(self, name: str, credits: int, periods_per_theory_class: int = 1, **kwargs) -> None:
-        super().__init__(name=name, credits=credits, periods=periods_per_theory_class, **kwargs)
+    def __init__(
+        self, name: str, 
+        credits: int, 
+        periods_per_theory_class: int = 1, 
+        **kwargs
+    ) -> None:
+
+        super().__init__(
+            name=name, 
+            credits=credits, 
+            periods=periods_per_theory_class, 
+            **kwargs
+        )
 
 
 class LabCourses(Course):
-    def __init__(self, name: str, credits: int, periods_per_lab: int = 3, **kwargs) -> None:
-        super().__init__(name=name, credits=credits, periods=periods_per_lab, **kwargs)
+    def __init__(
+        self, name: str, 
+        credits: int, 
+        periods_per_lab: int = 3, 
+        **kwargs
+    ) -> None:
+        super().__init__(
+            name=name, credits=credits, 
+            periods=periods_per_lab, **kwargs
+        )
 
 
 class Semester:
+    
     def __init__(self, sem_number: int, min_attendance: int = 75) -> None:
         self.sem_number = sem_number
         self.min_attendance = min_attendance
