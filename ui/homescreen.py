@@ -1,5 +1,7 @@
 import customtkinter as ctk
 from src.courses import Semester, Course
+from src.storage import load_semesters, save_semesters
+from ui.semester_screen import SemesterScreen
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -10,13 +12,18 @@ class MainApp(ctk.CTk):
         self.title("SmartTrack")
         self.geometry("1000x800")
 
+        self.semesters: list[Semester] = load_semesters()
+
         self.container = ctk.CTkFrame(self, fg_color="transparent")
         self.container.pack(side="top", fill="both", expand=True, padx=20, pady=20)
 
         self.frames = {}
 
-        frame = HomeScreen(parent=self.container, controller=self)
-        self.frames["HomeScreen"] = frame
+        home_frame = HomeScreen(parent=self.container, controller=self)
+        self.frames["HomeScreen"] = home_frame
+
+        semester_frame = SemesterScreen(parent=self.container, controller=self)
+        self.frames["SemesterScreen"] = semester_frame
 
         self.show_page("HomeScreen")
 
@@ -26,24 +33,37 @@ class MainApp(ctk.CTk):
         
         self.frames[page_name].pack(fill="both", expand=True)
 
+    def save_data(self) -> None:
+        save_semesters(self.semesters)
+
+    def open_semester(self, semester: Semester) -> None:
+        self.frames["SemesterScreen"].set_semester(semester)
+        self.show_page("SemesterScreen")
+
 
 class HomeScreen(ctk.CTkFrame): 
     def __init__(self, parent, controller):
         super().__init__(parent, fg_color="transparent")
         self.controller = controller
         
-        self.semesters_list = []
+        self.semesters_list = [f"Sem {s.sem_number}" for s in self.controller.semesters]
 
         dash_board = ctk.CTkFrame(self, corner_radius=20, height=250)
         dash_board.pack(side="top", fill="x", pady=(0, 20))
         
-        dash_lbl = ctk.CTkLabel(dash_board, text="Welcome back!", font=ctk.CTkFont(size=20))
-        dash_lbl.pack(pady=40)
+        dash_lbl = ctk.CTkLabel(dash_board, text="Welcome back!", font=ctk.CTkFont(size=22, weight="bold"))
+        dash_lbl.pack(pady=(35, 5))
 
+        self.dash_stats_lbl = ctk.CTkLabel(
+            dash_board,
+            text="Manage your courses, periods, and attendance smartly.",
+            font=ctk.CTkFont(size=13),
+            text_color="#8F9CAE"
+        )
+        self.dash_stats_lbl.pack(pady=(0, 35))
 
         cards_frame = ctk.CTkFrame(self, fg_color="transparent")
         cards_frame.pack(side="top", fill="x")
-
 
         self.add_sem_button = ctk.CTkButton(
             cards_frame, 
@@ -60,17 +80,43 @@ class HomeScreen(ctk.CTkFrame):
         self.semester_row = LazyRowFrame(cards_frame, height=80, width=800)
         self.semester_row.pack(pady=20, fill="x", expand=True)
 
+        self.refresh_semester_row()
+
     def add_semester(self) -> None:
-        next_sem_number = len(self.semesters_list) + 1
+        existing_nums = [s.sem_number for s in self.controller.semesters]
+        next_sem_number = max(existing_nums, default=0) + 1
         
+        new_sem = Semester(next_sem_number)
+        self.controller.semesters.append(new_sem)
+        self.controller.save_data()
+
         self.semesters_list.append(f"Sem {next_sem_number}")
         
         # Trigger the layout synchronization loop to update the monitor view
         self.refresh_semester_row()
+        self.on_semester_select(f"Sem {next_sem_number}")
 
     def refresh_semester_row(self) -> None:
         for child in self.semester_row.winfo_children():
             child.destroy()
+
+        self.semesters_list = [f"Sem {s.sem_number}" for s in self.controller.semesters]
+
+        total_sems = len(self.controller.semesters)
+        total_courses = sum(len(s.courses) for s in self.controller.semesters)
+        self.dash_stats_lbl.configure(
+            text=f"{total_sems} Active Semester{'s' if total_sems != 1 else ''} • {total_courses} Course{'s' if total_courses != 1 else ''} Tracked"
+        )
+
+        if not self.semesters_list:
+            no_sem = ctk.CTkLabel(
+                self.semester_row,
+                text="No semesters added yet. Click 'Add Semester' above to begin!",
+                font=ctk.CTkFont(size=13),
+                text_color="#8F9CAE"
+            )
+            no_sem.pack(side="left", padx=20, pady=20)
+            return
 
         for sem_name in self.semesters_list:
             sem_btn = ctk.CTkButton(
@@ -86,6 +132,10 @@ class HomeScreen(ctk.CTkFrame):
 
     def on_semester_select(self, name: str) -> None:
         print(f"User navigated context directly into: {name}")
+        for sem in self.controller.semesters:
+            if f"Sem {sem.sem_number}" == name:
+                self.controller.open_semester(sem)
+                break
 
 class LazyRowFrame(ctk.CTkScrollableFrame):
     def __init__(self, master, height: int = 150, width: int = 600, **kwargs):
@@ -152,6 +202,7 @@ class ClickableHomeWidget(ctk.CTkFrame):
             self.configure(fg_color=self.bg_color)
 
 
+class CustomDropdown(ctk.CTkFrame):
     def __init__(self, master, options: list[str], default_text: str = "Select Option", 
                  width: int = 200, height: int = 40, on_select=None, **kwargs):
         # Base frame setup mimicking a clean slate input layout
@@ -261,3 +312,9 @@ class ClickableHomeWidget(ctk.CTkFrame):
     def _on_header_leave(self, event=None):
         if not self.is_open:
             self.configure(fg_color="#2C333D")
+
+    def get(self) -> str:
+        return self.selection_label.cget("text")
+
+    def set(self, value: str) -> None:
+        self.selection_label.configure(text=value)

@@ -120,9 +120,79 @@ class Course:
         required_classes = math.ceil(required_periods / self.periods)
         
         remaining_classes = self.total_classes - (self.classes_happened // self.periods)
-        if required_classes <= remaining_classes:
+        if self.total_classes == 0 or required_classes <= remaining_classes:
             return required_classes
         return False
+
+    def undo_attendance(self, class_attended: bool) -> bool:
+        if not isinstance(class_attended, bool):
+            raise TypeError("Attendance must be a strict boolean value (True/False).")
+        if self.classes_happened < self.periods:
+            return False
+        if class_attended:
+            if self.classes_attended < self.periods:
+                return False
+            self.classes_attended -= self.periods
+            self.classes_happened -= self.periods
+        else:
+            if (self.classes_happened - self.periods) < self.classes_attended:
+                return False
+            self.classes_happened -= self.periods
+        return True
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "credits": self.credits,
+            "periods": self.periods,
+            "classes_attended": self.classes_attended,
+            "classes_happened": self.classes_happened,
+            "total_classes": self.total_classes,
+            "min_attendance": self.min_attendance,
+            "type": self.__class__.__name__,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Course":
+        c_type = data.get("type", "Course")
+        name = data["name"]
+        credits = data["credits"]
+        periods = data.get("periods", 1)
+        classes_attended = data.get("classes_attended", 0)
+        classes_happened = data.get("classes_happened", 0)
+        total_classes = data.get("total_classes", 0)
+        min_attendance = data.get("min_attendance", 75)
+
+        if c_type == "TheoryCourses":
+            return TheoryCourses(
+                name=name,
+                credits=credits,
+                periods_per_theory_class=periods,
+                classes_attended=classes_attended,
+                classes_happened=classes_happened,
+                total_classes=total_classes,
+                min_attendance=min_attendance,
+            )
+        elif c_type == "LabCourses":
+            return LabCourses(
+                name=name,
+                credits=credits,
+                periods_per_lab=periods,
+                classes_attended=classes_attended,
+                classes_happened=classes_happened,
+                total_classes=total_classes,
+                min_attendance=min_attendance,
+            )
+        else:
+            return Course(
+                name=name,
+                credits=credits,
+                periods=periods,
+                classes_attended=classes_attended,
+                classes_happened=classes_happened,
+                total_classes=total_classes,
+                min_attendance=min_attendance,
+            )
 
 
 class TheoryCourses(Course):
@@ -169,10 +239,31 @@ class Semester:
     def min_attendance(self, attendance: int) -> None:
         if attendance > 100 or attendance < 0:
             raise AttendanceNotValidError("Attendance must behave like percentages")
-        self.__none_or_val = attendance
+        self.__min_attendance = attendance
 
     def add_course(self, course: Course) -> None:
         self.courses.append(course)
+
+    def remove_course(self, course: Course) -> None:
+        if course in self.courses:
+            self.courses.remove(course)
+
+    def to_dict(self) -> dict:
+        return {
+            "sem_number": self.sem_number,
+            "min_attendance": self.min_attendance,
+            "courses": [course.to_dict() for course in self.courses],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Semester":
+        sem = cls(
+            sem_number=data.get("sem_number", 1),
+            min_attendance=data.get("min_attendance", 75),
+        )
+        for c_data in data.get("courses", []):
+            sem.add_course(Course.from_dict(c_data))
+        return sem
 
     @debug_mode
     def print_course(self) -> None:
