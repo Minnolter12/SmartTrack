@@ -1,10 +1,10 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QFrame, QProgressBar, QDialog, QLineEdit,
-    QComboBox, QMessageBox
+    QComboBox, QMessageBox, QSlider, QRadioButton, QButtonGroup
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QCursor
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QFont, QCursor, QPainter, QPen, QColor, QConicalGradient, QLinearGradient
 from src.courses import Semester, Course, TheoryCourses, LabCourses
 
 class SemesterScreen(QWidget):
@@ -214,23 +214,130 @@ class SemesterScreen(QWidget):
             self.go_back()
 
 
+class CircularProgressWidget(QWidget):
+    """Modern circular ring progress gauge with smooth gradients and center percentage."""
+    def __init__(self, parent=None, size: int = 76):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self._percentage: float = 0.0
+        self._has_data: bool = False
+        self._color_start = QColor("#2ECC71")
+        self._color_end = QColor("#27AE60")
+
+    def set_data(self, percentage: float, has_data: bool, status_mode: str):
+        """status_mode: 'safe', 'borderline', 'alert', 'nodata'"""
+        self._percentage = max(0.0, min(100.0, percentage))
+        self._has_data = has_data
+
+        if not has_data:
+            self._color_start = QColor("#64748B")
+            self._color_end = QColor("#475569")
+        elif status_mode == "safe":
+            # Emerald green gradient
+            self._color_start = QColor("#2ECC71")
+            self._color_end = QColor("#10B981")
+        elif status_mode == "borderline":
+            # Amber / Warm Orange gradient
+            self._color_start = QColor("#F59E0B")
+            self._color_end = QColor("#D97706")
+        else: # alert
+            # Coral / Crimson red gradient
+            self._color_start = QColor("#EF4444")
+            self._color_end = QColor("#DC2626")
+
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+        stroke_width = 7.0
+        margin = stroke_width / 2.0 + 2.0
+        rect = QRectF(margin, margin, w - 2 * margin, h - 2 * margin)
+
+        # 1. Background Track Ring
+        bg_pen = QPen(QColor("#252D38"), stroke_width)
+        bg_pen.setCapStyle(Qt.RoundCap)
+        painter.setPen(bg_pen)
+        painter.drawArc(rect, 0, 360 * 16)
+
+        # 2. Foreground Progress Arc with Gradient
+        if self._has_data and self._percentage > 0:
+            gradient = QLinearGradient(0, 0, w, h)
+            gradient.setColorAt(0.0, self._color_start)
+            gradient.setColorAt(1.0, self._color_end)
+
+            prog_pen = QPen(gradient, stroke_width)
+            prog_pen.setCapStyle(Qt.RoundCap)
+            painter.setPen(prog_pen)
+
+            start_angle = 90 * 16 # Start from top (12 o'clock)
+            span_angle = -int(self._percentage * 3.6 * 16) # Clockwise
+            painter.drawArc(rect, start_angle, span_angle)
+
+        # 3. Inner text display
+        painter.setPen(QColor("#FFFFFF") if self._has_data else QColor("#8F9CAE"))
+        font = QFont()
+        font.setBold(True)
+        if self._has_data:
+            font.setPointSize(11)
+            painter.setFont(font)
+            text = f"{self._percentage:.0f}%"
+        else:
+            font.setPointSize(11)
+            painter.setFont(font)
+            text = "—%"
+
+        painter.drawText(self.rect(), Qt.AlignCenter, text)
+        painter.end()
+
+
 class CourseCard(QFrame):
     def __init__(self, course: Course, parent_screen: SemesterScreen):
         super().__init__()
         self.course = course
         self.parent_screen = parent_screen
 
+        has_happened = course.classes_happened > 0
+        min_target = course.min_attendance or 75
+        pct = (course.classes_attended / course.classes_happened * 100) if has_happened else 0.0
+
+        # Determine health mode and colors
+        if not has_happened:
+            health_mode = "nodata"
+            accent_color = "#3A4454"
+            border_glow = "rgba(58, 68, 84, 0.4)"
+        elif pct >= min_target:
+            # Check if borderline (within 3% of min_target or 0 safe leaves)
+            safe_leaves = course.calculate_safe_leaves()
+            if safe_leaves == 0 or (pct - min_target < 3.0):
+                health_mode = "borderline"
+                accent_color = "#F59E0B"
+                border_glow = "rgba(245, 158, 11, 0.35)"
+            else:
+                health_mode = "safe"
+                accent_color = "#10B981"
+                border_glow = "rgba(16, 185, 129, 0.35)"
+        else:
+            health_mode = "alert"
+            accent_color = "#EF4444"
+            border_glow = "rgba(239, 68, 68, 0.35)"
+
         self.setObjectName("CourseCard")
-        self.setStyleSheet("""
-            QFrame#CourseCard {
+        # 4px left accent strip with subtle glowing border
+        self.setStyleSheet(f"""
+            QFrame#CourseCard {{
                 background-color: #181C24;
-                border: 1px solid #2C333D;
+                border: 1px solid {border_glow};
+                border-left: 4px solid {accent_color};
                 border-radius: 12px;
-            }
+            }}
         """)
 
         card_layout = QVBoxLayout(self)
-        card_layout.setContentsMargins(20, 16, 20, 16)
+        card_layout.setContentsMargins(18, 16, 20, 16)
         card_layout.setSpacing(12)
 
         # Top row: Title, badges, delete button
@@ -278,54 +385,41 @@ class CourseCard(QFrame):
 
         card_layout.addLayout(top_row)
 
-        # Middle row: Percentage & Progress
+        # Middle row: Circular Progress Gauge + Detailed Stats
         mid_row = QHBoxLayout()
+        mid_row.setSpacing(16)
 
-        has_happened = course.classes_happened > 0
-        min_target = course.min_attendance or 75
+        # Circular Gauge
+        self.circular_gauge = CircularProgressWidget(size=76)
+        self.circular_gauge.set_data(pct, has_happened, health_mode)
+        mid_row.addWidget(self.circular_gauge, alignment=Qt.AlignVCenter)
+
+        # Stats Column
+        stats_col = QVBoxLayout()
+        stats_col.setSpacing(4)
+
         if has_happened:
-            pct = course.attendance_percentage(float)
-            pct_text = f"{pct:.1f}%"
-            is_above = pct >= min_target
-            pct_color = "#2ECC71" if is_above else "#E74C3C"
-            int_pct = int(min(100, max(0, pct)))
+            pct_formatted = f"{pct:.1f}%"
+            val_lbl = QLabel(f"{pct_formatted} Attendance")
+            val_lbl.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {accent_color}; border: none;")
         else:
-            pct_text = "—%"
-            pct_color = "#8F9CAE"
-            is_above = True
-            int_pct = 0
+            val_lbl = QLabel("No Classes Held Yet")
+            val_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #8F9CAE; border: none;")
+        stats_col.addWidget(val_lbl)
 
-        pct_lbl = QLabel(pct_text)
-        pct_lbl.setStyleSheet(f"font-size: 24px; font-weight: bold; color: {pct_color}; border: none;")
-        pct_lbl.setFixedWidth(80)
-        mid_row.addWidget(pct_lbl)
-
-        prog_layout = QVBoxLayout()
-        count_str = f"Attended: {course.classes_attended} / {course.classes_happened} periods"
+        count_str = f"Attended: {course.classes_attended} of {course.classes_happened} period{'s' if course.classes_happened != 1 else ''}"
         if course.total_classes > 0:
-            count_str += f" (Est. Total: {course.total_classes})"
+            count_str += f" • Estimated Semester Total: {course.total_classes}"
         count_lbl = QLabel(count_str)
         count_lbl.setStyleSheet("font-size: 12px; color: #8F9CAE; border: none;")
-        prog_layout.addWidget(count_lbl)
+        stats_col.addWidget(count_lbl)
 
-        prog_bar = QProgressBar()
-        prog_bar.setFixedHeight(8)
-        prog_bar.setTextVisible(False)
-        prog_bar.setRange(0, 100)
-        prog_bar.setValue(int_pct)
-        prog_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background-color: #2C333D;
-                border: none;
-                border-radius: 4px;
-            }}
-            QProgressBar::chunk {{
-                background-color: {pct_color if has_happened else "#373F4B"};
-                border-radius: 4px;
-            }}
-        """)
-        prog_layout.addWidget(prog_bar)
-        mid_row.addLayout(prog_layout)
+        target_info = QLabel(f"Minimum Requirement: {min_target}%")
+        target_info.setStyleSheet("font-size: 11px; color: #64748B; border: none;")
+        stats_col.addWidget(target_info)
+
+        mid_row.addLayout(stats_col)
+        mid_row.addStretch()
 
         card_layout.addLayout(mid_row)
 
@@ -339,22 +433,22 @@ class CourseCard(QFrame):
             insight_text = "ℹ No classes have occurred yet. Use '+ Present' or '- Absent' when classes take place."
             insight_color = "#8F9CAE"
         else:
-            if is_above:
+            if pct >= min_target:
                 safe_leaves = course.calculate_safe_leaves()
                 if safe_leaves > 0:
                     insight_text = f"✓ Safe Leaves: You can safely miss up to {safe_leaves} slot(s) and remain above {min_target}%."
-                    insight_color = "#2ECC71"
+                    insight_color = "#10B981"
                 else:
                     insight_text = f"⚠ Borderline: Currently at or near {min_target}%. Missing the next class will lower your standing."
-                    insight_color = "#F39C12"
+                    insight_color = "#F59E0B"
             else:
                 recovery = course.regain_min_attendance()
                 if recovery is False:
                     insight_text = f"⚠ Critical: Mathematically impossible to reach {min_target}% with remaining classes."
-                    insight_color = "#E74C3C"
+                    insight_color = "#EF4444"
                 else:
                     insight_text = f"⚠ Recovery: You must attend the next {recovery} consecutive slot(s) to reach {min_target}%."
-                    insight_color = "#E74C3C"
+                    insight_color = "#EF4444"
 
         insight_lbl = QLabel(insight_text)
         insight_lbl.setStyleSheet(f"font-size: 12px; font-weight: {'bold' if has_happened else 'normal'}; color: {insight_color}; border: none;")
@@ -384,12 +478,22 @@ class CourseCard(QFrame):
 
         actions_row.addStretch()
 
+        simulator_btn = QPushButton("⚡ Simulate")
+        simulator_btn.setObjectName("SimulatorBtn")
+        simulator_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        simulator_btn.clicked.connect(self.open_simulator_dialog)
+        actions_row.addWidget(simulator_btn)
+
         adjust_btn = QPushButton("⚙ Adjust")
         adjust_btn.setCursor(QCursor(Qt.PointingHandCursor))
         adjust_btn.clicked.connect(self.open_edit_dialog)
         actions_row.addWidget(adjust_btn)
 
         card_layout.addLayout(actions_row)
+
+    def open_simulator_dialog(self) -> None:
+        dialog = WhatIfSimulatorDialog(self.course, self.parent_screen)
+        dialog.exec()
 
     def log_presence(self, attended: bool) -> None:
         self.course.log_attendance(attended)
@@ -671,3 +775,277 @@ class UndoChoiceDialog(QDialog):
     def _apply(self, attended: bool) -> None:
         self.course.undo_attendance(attended)
         self.accept()
+
+
+class WhatIfSimulatorDialog(QDialog):
+    """Interactive simulator allowing students to test scenarios:
+    'What if I attend the next N slots?' vs 'What if I miss the next N slots?'
+    """
+    def __init__(self, course: Course, parent=None):
+        super().__init__(parent)
+        self.course = course
+        self.setWindowTitle(f"What-If Simulator • {course.name}")
+        self.setFixedSize(500, 520)
+
+        # Baseline metrics
+        self.current_happened = course.classes_happened
+        self.current_attended = course.classes_attended
+        self.target_pct = course.min_attendance if course.min_attendance is not None else 75
+        self.periods_per_slot = course.periods
+
+        self.current_pct = (
+            (self.current_attended / self.current_happened) * 100
+            if self.current_happened > 0
+            else 0.0
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(26, 24, 26, 24)
+        layout.setSpacing(16)
+
+        # 1. Header
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(4)
+        title_lbl = QLabel("What-If Attendance Simulator")
+        title_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: #FFFFFF;")
+        header_layout.addWidget(title_lbl)
+
+        sub_lbl = QLabel(f"Forecast your future attendance for {course.name}")
+        sub_lbl.setStyleSheet("font-size: 12px; color: #8F9CAE;")
+        header_layout.addWidget(sub_lbl)
+        layout.addLayout(header_layout)
+
+        # 2. Mode Selector: Attend vs Miss
+        mode_frame = QFrame()
+        mode_frame.setStyleSheet("""
+            QFrame {
+                background-color: #181C24;
+                border: 1px solid #2C333D;
+                border-radius: 10px;
+            }
+        """)
+        mode_layout = QHBoxLayout(mode_frame)
+        mode_layout.setContentsMargins(16, 10, 16, 10)
+
+        self.btn_group = QButtonGroup(self)
+        self.radio_attend = QRadioButton("Attend next classes (Boost)")
+        self.radio_attend.setChecked(True)
+        self.radio_attend.setCursor(QCursor(Qt.PointingHandCursor))
+        self.radio_attend.setStyleSheet("color: #2ECC71; font-weight: bold; font-size: 13px;")
+
+        self.radio_miss = QRadioButton("Miss / Bunk next classes (Drop)")
+        self.radio_miss.setCursor(QCursor(Qt.PointingHandCursor))
+        self.radio_miss.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 13px;")
+
+        self.btn_group.addButton(self.radio_attend, 1)
+        self.btn_group.addButton(self.radio_miss, 2)
+        self.btn_group.idToggled.connect(self._recalculate)
+
+        mode_layout.addWidget(self.radio_attend)
+        mode_layout.addWidget(self.radio_miss)
+        layout.addWidget(mode_frame)
+
+        # 3. Interactive Slider Section
+        slider_card = QFrame()
+        slider_card.setStyleSheet("""
+            QFrame {
+                background-color: #181C24;
+                border: 1px solid #2C333D;
+                border-radius: 10px;
+            }
+        """)
+        slider_card_layout = QVBoxLayout(slider_card)
+        slider_card_layout.setContentsMargins(18, 14, 18, 14)
+        slider_card_layout.setSpacing(10)
+
+        slider_top_row = QHBoxLayout()
+        self.slider_label = QLabel("Simulate upcoming slots:")
+        self.slider_label.setStyleSheet("color: #CBD5E1; font-size: 13px; font-weight: 500;")
+        slider_top_row.addWidget(self.slider_label)
+
+        self.slider_count_lbl = QLabel("1 slot")
+        self.slider_count_lbl.setStyleSheet("color: #64B5F6; font-size: 14px; font-weight: bold;")
+        slider_top_row.addWidget(self.slider_count_lbl, alignment=Qt.AlignRight)
+        slider_card_layout.addLayout(slider_top_row)
+
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setRange(1, 20)
+        self.slider.setValue(1)
+        self.slider.setCursor(QCursor(Qt.PointingHandCursor))
+        self.slider.valueChanged.connect(self._on_slider_change)
+        slider_card_layout.addWidget(self.slider)
+
+        # Quick min/max indicators below slider
+        scale_row = QHBoxLayout()
+        scale_min = QLabel("1 slot")
+        scale_min.setStyleSheet("color: #64748B; font-size: 11px;")
+        scale_row.addWidget(scale_min)
+        scale_max = QLabel("20 slots")
+        scale_max.setStyleSheet("color: #64748B; font-size: 11px;")
+        scale_row.addWidget(scale_max, alignment=Qt.AlignRight)
+        slider_card_layout.addLayout(scale_row)
+
+        layout.addWidget(slider_card)
+
+        # 4. Result Projection Card
+        self.result_card = QFrame()
+        self.result_card.setStyleSheet("""
+            QFrame {
+                background-color: #1A212D;
+                border: 1px solid #2C3748;
+                border-radius: 12px;
+            }
+        """)
+        result_layout = QVBoxLayout(self.result_card)
+        result_layout.setContentsMargins(20, 16, 20, 16)
+        result_layout.setSpacing(10)
+
+        proj_row = QHBoxLayout()
+        # Current vs Projected
+        curr_box = QVBoxLayout()
+        curr_title = QLabel("Current Standing")
+        curr_title.setStyleSheet("color: #8F9CAE; font-size: 11px;")
+        curr_box.addWidget(curr_title)
+
+        curr_text = f"{self.current_pct:.1f}%" if self.current_happened > 0 else "—%"
+        self.curr_val_lbl = QLabel(curr_text)
+        self.curr_val_lbl.setStyleSheet("color: #FFFFFF; font-size: 20px; font-weight: bold;")
+        curr_box.addWidget(self.curr_val_lbl)
+        proj_row.addLayout(curr_box)
+
+        arrow_lbl = QLabel("➔")
+        arrow_lbl.setStyleSheet("color: #64748B; font-size: 20px; font-weight: bold; margin: 0 10px;")
+        proj_row.addWidget(arrow_lbl, alignment=Qt.AlignCenter)
+
+        proj_box = QVBoxLayout()
+        proj_title = QLabel("Projected Standing")
+        proj_title.setStyleSheet("color: #8F9CAE; font-size: 11px;")
+        proj_box.addWidget(proj_title)
+
+        self.proj_val_lbl = QLabel("0.0%")
+        self.proj_val_lbl.setStyleSheet("color: #2ECC71; font-size: 20px; font-weight: bold;")
+        proj_box.addWidget(self.proj_val_lbl)
+        proj_row.addLayout(proj_box)
+
+        # Delta Badge
+        self.delta_badge = QLabel("+0.0%")
+        self.delta_badge.setStyleSheet("""
+            background-color: #1E3A2F;
+            color: #2ECC71;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 8px;
+            padding: 5px 12px;
+        """)
+        proj_row.addWidget(self.delta_badge, alignment=Qt.AlignRight | Qt.AlignVCenter)
+
+        result_layout.addLayout(proj_row)
+
+        # Progress bar
+        self.proj_progress = QProgressBar()
+        self.proj_progress.setFixedHeight(8)
+        self.proj_progress.setTextVisible(False)
+        self.proj_progress.setRange(0, 100)
+        result_layout.addWidget(self.proj_progress)
+
+        # Status text explanation
+        self.explanation_lbl = QLabel()
+        self.explanation_lbl.setWordWrap(True)
+        self.explanation_lbl.setStyleSheet("color: #CBD5E1; font-size: 12px; line-height: 1.4;")
+        result_layout.addWidget(self.explanation_lbl)
+
+        layout.addWidget(self.result_card)
+
+        layout.addStretch()
+
+        # 5. Close Button
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        close_btn = QPushButton("Done")
+        close_btn.setObjectName("PrimaryBtn")
+        close_btn.setFixedWidth(100)
+        close_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        close_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        # Initial calculation
+        self._recalculate()
+
+    def _on_slider_change(self, value: int) -> None:
+        unit = "slot" if value == 1 else "slots"
+        periods_total = value * self.periods_per_slot
+        if self.periods_per_slot > 1:
+            self.slider_count_lbl.setText(f"{value} {unit} ({periods_total} periods)")
+        else:
+            self.slider_count_lbl.setText(f"{value} {unit}")
+        self._recalculate()
+
+    def _recalculate(self) -> None:
+        slots = self.slider.value()
+        additional_periods = slots * self.periods_per_slot
+        sim_happened = self.current_happened + additional_periods
+
+        is_attend_mode = self.radio_attend.isChecked()
+        if is_attend_mode:
+            sim_attended = self.current_attended + additional_periods
+        else:
+            sim_attended = self.current_attended
+
+        sim_pct = (sim_attended / sim_happened) * 100 if sim_happened > 0 else 0.0
+
+        # Delta calculation
+        if self.current_happened > 0:
+            diff = sim_pct - self.current_pct
+            diff_str = f"+{diff:.1f}%" if diff >= 0 else f"{diff:.1f}%"
+        else:
+            diff_str = f"{sim_pct:.1f}%"
+
+        # Safe / unsafe colors
+        is_safe = sim_pct >= self.target_pct
+        pct_color = "#2ECC71" if is_safe else "#E74C3C"
+
+        self.proj_val_lbl.setText(f"{sim_pct:.1f}%")
+        self.proj_val_lbl.setStyleSheet(f"color: {pct_color}; font-size: 20px; font-weight: bold;")
+
+        if is_attend_mode:
+            self.delta_badge.setText(diff_str)
+            self.delta_badge.setStyleSheet("background-color: #1E3A2F; color: #2ECC71; font-size: 12px; font-weight: bold; border-radius: 8px; padding: 5px 12px;")
+        else:
+            self.delta_badge.setText(diff_str)
+            self.delta_badge.setStyleSheet("background-color: #3D2323; color: #E74C3C; font-size: 12px; font-weight: bold; border-radius: 8px; padding: 5px 12px;")
+
+        # Progress bar
+        self.proj_progress.setValue(int(min(100, max(0, sim_pct))))
+        self.proj_progress.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: #2C333D;
+                border: none;
+                border-radius: 4px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {pct_color};
+                border-radius: 4px;
+            }}
+        """)
+
+        # Explanatory verdict
+        unit_text = f"{slots} upcoming slot{'s' if slots > 1 else ''}"
+        if is_attend_mode:
+            if is_safe:
+                self.explanation_lbl.setText(
+                    f"✓ Attending {unit_text} will raise your attendance to <b>{sim_pct:.1f}%</b>, keeping you comfortably above the {self.target_pct}% threshold."
+                )
+            else:
+                self.explanation_lbl.setText(
+                    f"Attending {unit_text} will improve your attendance to <b>{sim_pct:.1f}%</b>, but you still need more classes to reach the {self.target_pct}% target."
+                )
+        else:
+            if is_safe:
+                self.explanation_lbl.setText(
+                    f"✓ Missing {unit_text} will lower your attendance to <b>{sim_pct:.1f}%</b>. You will remain above your {self.target_pct}% requirement."
+                )
+            else:
+                self.explanation_lbl.setText(
+                    f"⚠ Missing {unit_text} will drop your attendance to <b>{sim_pct:.1f}%</b>, falling below your {self.target_pct}% target!"
+                )

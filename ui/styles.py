@@ -181,4 +181,43 @@ QDialog {
     background-color: #141820;
     color: #FFFFFF;
 }
+
+QPushButton#SimulatorBtn {
+    background-color: #242B35;
+    color: #64B5F6;
+    border: 1px solid #364457;
+    font-weight: 600;
+}
+
+QPushButton#SimulatorBtn:hover {
+    background-color: #2F3B4A;
+    border-color: #64B5F6;
+    color: #90CAF9;
+}
+
+QSlider::groove:horizontal {
+    border: none;
+    height: 6px;
+    background: #2C333D;
+    border-radius: 3px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #3B8ED0;
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background: #FFFFFF;
+    border: 2px solid #3B8ED0;
+    width: 16px;
+    margin-top: -5px;
+    margin-bottom: -5px;
+    border-radius: 8px;
+}
+
+QSlider::handle:horizontal:hover {
+    background: #E0E0E0;
+    border-color: #64B5F6;
+}
 """
