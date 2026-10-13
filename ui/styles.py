@@ -220,4 +220,91 @@ QSlider::handle:horizontal:hover {
     background: #E0E0E0;
     border-color: #64B5F6;
 }
+
+/* Preset Chips for Simulator */
+QPushButton.PresetChip {
+    background-color: #1E2530;
+    color: #94A3B8;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QPushButton.PresetChip:hover {
+    background-color: #2D3748;
+    color: #60A5FA;
+    border-color: #60A5FA;
+}
+
+QPushButton.PresetChip:pressed {
+    background-color: #1E3A5F;
+}
+
+/* Stepper buttons */
+QPushButton.StepperBtn {
+    background-color: #242C38;
+    color: #E2E8F0;
+    border: 1px solid #3B4758;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    min-width: 38px;
+    max-width: 38px;
+    min-height: 38px;
+    max-height: 38px;
+    padding: 0px;
+}
+
+QPushButton.StepperBtn:hover {
+    background-color: #323E50;
+    border-color: #60A5FA;
+    color: #60A5FA;
+}
+
+QPushButton.StepperBtn:pressed {
+    background-color: #1E2633;
+}
+
+/* Hero Cards on HomeScreen */
+QFrame.HeroSemesterCard {
+    background-color: #151921;
+    border: 1px solid #28303C;
+    border-radius: 14px;
+}
+
+QFrame.HeroSemesterCard:hover {
+    background-color: #1A202A;
+    border: 1px solid #3E4C60;
+}
+
+/* Course Tab Buttons */
+QPushButton.CourseTabBtn {
+    background-color: transparent;
+    color: #8F9CAE;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QPushButton.CourseTabBtn:hover {
+    color: #CBD5E1;
+}
+
+QPushButton.CourseTabBtn[active="true"] {
+    color: #60A5FA;
+    border-bottom: 2px solid #60A5FA;
+}
+
+/* Mini pill counters for OD / ML */
+QLabel.PillBadge {
+    border-radius: 6px;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: bold;
+}
 """

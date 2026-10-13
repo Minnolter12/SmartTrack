@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QFrame, QProgressBar, QDialog, QLineEdit,
-    QComboBox, QMessageBox, QSlider, QRadioButton, QButtonGroup
+    QComboBox, QMessageBox, QRadioButton, QButtonGroup,
+    QSpinBox, QStackedWidget
 )
 from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QFont, QCursor, QPainter, QPen, QColor, QConicalGradient, QLinearGradient
@@ -83,7 +84,18 @@ class SemesterScreen(QWidget):
         stats_layout.addLayout(courses_box)
         stats_layout.addSpacing(30)
 
-        # Stat 3: Target Minimum
+        # Stat 3: Projected with OD / Medical Leave
+        self.proj_overall_box = QVBoxLayout()
+        self.stat_proj_val = QLabel("—%")
+        self.stat_proj_val.setStyleSheet("font-size: 22px; font-weight: bold; color: #60A5FA; border: none;")
+        self.proj_overall_box.addWidget(self.stat_proj_val)
+        self.proj_lbl = QLabel("Projected (w/ OD & ML)")
+        self.proj_lbl.setStyleSheet("font-size: 12px; color: #8F9CAE; border: none;")
+        self.proj_overall_box.addWidget(self.proj_lbl)
+        stats_layout.addLayout(self.proj_overall_box)
+        stats_layout.addSpacing(30)
+
+        # Stat 4: Target Minimum
         target_box = QVBoxLayout()
         self.stat_target_val = QLabel("75%")
         self.stat_target_val.setStyleSheet("font-size: 22px; font-weight: bold; color: #FFFFFF; border: none;")
@@ -95,7 +107,7 @@ class SemesterScreen(QWidget):
 
         stats_layout.addStretch()
 
-        # Stat 4: Standing status badge
+        # Stat 5: Standing status badge
         self.status_badge = QLabel("No Data")
         self.status_badge.setStyleSheet("""
             QLabel {
@@ -150,14 +162,27 @@ class SemesterScreen(QWidget):
 
         total_attended = sum(c.classes_attended for c in courses)
         total_happened = sum(c.classes_happened for c in courses)
+        total_effective = sum(min(c.classes_happened, c.classes_attended + c.od_periods + c.ml_periods) for c in courses)
 
         if total_happened > 0:
             pct = (total_attended / total_happened) * 100
+            proj_pct = (total_effective / total_happened) * 100
             self.stat_overall_val.setText(f"{pct:.1f}%")
+            self.stat_proj_val.setText(f"{proj_pct:.1f}%")
+
+            if proj_pct >= self.current_semester.min_attendance:
+                self.stat_proj_val.setStyleSheet("font-size: 22px; font-weight: bold; color: #2ECC71; border: none;")
+            else:
+                self.stat_proj_val.setStyleSheet("font-size: 22px; font-weight: bold; color: #E74C3C; border: none;")
+
             if pct >= self.current_semester.min_attendance:
                 self.stat_overall_val.setStyleSheet("font-size: 22px; font-weight: bold; color: #2ECC71; border: none;")
                 self.status_badge.setText("✓ In Good Standing")
                 self.status_badge.setStyleSheet("background-color: #1E3A2F; color: #2ECC71; font-size: 12px; font-weight: bold; border-radius: 10px; padding: 6px 16px; border: none;")
+            elif proj_pct >= self.current_semester.min_attendance:
+                self.stat_overall_val.setStyleSheet("font-size: 22px; font-weight: bold; color: #F59E0B; border: none;")
+                self.status_badge.setText("✓ Safe with OD/ML")
+                self.status_badge.setStyleSheet("background-color: #2D2713; color: #F59E0B; font-size: 12px; font-weight: bold; border-radius: 10px; padding: 6px 16px; border: none;")
             else:
                 self.stat_overall_val.setStyleSheet("font-size: 22px; font-weight: bold; color: #E74C3C; border: none;")
                 self.status_badge.setText("⚠ Attention Needed")
@@ -165,6 +190,8 @@ class SemesterScreen(QWidget):
         else:
             self.stat_overall_val.setText("—%")
             self.stat_overall_val.setStyleSheet("font-size: 22px; font-weight: bold; color: #8F9CAE; border: none;")
+            self.stat_proj_val.setText("—%")
+            self.stat_proj_val.setStyleSheet("font-size: 22px; font-weight: bold; color: #8F9CAE; border: none;")
             self.status_badge.setText("New Semester")
             self.status_badge.setStyleSheet("background-color: #2C333D; color: #8F9CAE; font-size: 12px; font-weight: bold; border-radius: 10px; padding: 6px 16px; border: none;")
 
@@ -693,6 +720,21 @@ class EditCourseDialog(QDialog):
         self.attended_entry = QLineEdit(str(course.classes_attended))
         layout.addWidget(self.attended_entry)
 
+        # On-Duty and Medical Leave Row
+        od_ml_row = QHBoxLayout()
+        od_box = QVBoxLayout()
+        od_box.addWidget(QLabel("Approved OD Periods"))
+        self.od_entry = QLineEdit(str(course.od_periods))
+        od_box.addWidget(self.od_entry)
+        od_ml_row.addLayout(od_box)
+
+        ml_box = QVBoxLayout()
+        ml_box.addWidget(QLabel("Medical Leave Periods"))
+        self.ml_entry = QLineEdit(str(course.ml_periods))
+        ml_box.addWidget(self.ml_entry)
+        od_ml_row.addLayout(ml_box)
+        layout.addLayout(od_ml_row)
+
         layout.addWidget(QLabel("Total Classes in Semester (Optional)"))
         self.total_entry = QLineEdit(str(course.total_classes))
         layout.addWidget(self.total_entry)
@@ -719,9 +761,11 @@ class EditCourseDialog(QDialog):
         try:
             happened = int(self.happened_entry.text().strip())
             attended = int(self.attended_entry.text().strip())
+            od = int(self.od_entry.text().strip() or "0")
+            ml = int(self.ml_entry.text().strip() or "0")
             total = int(self.total_entry.text().strip() or "0")
 
-            if happened < 0 or attended < 0 or total < 0:
+            if happened < 0 or attended < 0 or od < 0 or ml < 0 or total < 0:
                 raise ValueError
             if attended > happened:
                 self.error_lbl.setText("Attended periods cannot exceed happened periods.")
@@ -729,10 +773,12 @@ class EditCourseDialog(QDialog):
 
             self.course.classes_happened = happened
             self.course.classes_attended = attended
+            self.course.od_periods = od
+            self.course.ml_periods = ml
             self.course.total_classes = total
             self.accept()
         except ValueError:
-            self.error_lbl.setText("Please enter valid positive numbers.")
+            self.error_lbl.setText("Please enter valid non-negative numbers.")
 
 
 class UndoChoiceDialog(QDialog):
@@ -845,47 +891,94 @@ class WhatIfSimulatorDialog(QDialog):
         mode_layout.addWidget(self.radio_miss)
         layout.addWidget(mode_frame)
 
-        # 3. Interactive Slider Section
-        slider_card = QFrame()
-        slider_card.setStyleSheet("""
+        # 3. Interactive Stepper & Preset Chips Section (Replacing Slider)
+        input_card = QFrame()
+        input_card.setStyleSheet("""
             QFrame {
                 background-color: #181C24;
                 border: 1px solid #2C333D;
-                border-radius: 10px;
+                border-radius: 12px;
             }
         """)
-        slider_card_layout = QVBoxLayout(slider_card)
-        slider_card_layout.setContentsMargins(18, 14, 18, 14)
-        slider_card_layout.setSpacing(10)
+        input_card_layout = QVBoxLayout(input_card)
+        input_card_layout.setContentsMargins(20, 16, 20, 16)
+        input_card_layout.setSpacing(14)
 
-        slider_top_row = QHBoxLayout()
-        self.slider_label = QLabel("Simulate upcoming slots:")
-        self.slider_label.setStyleSheet("color: #CBD5E1; font-size: 13px; font-weight: 500;")
-        slider_top_row.addWidget(self.slider_label)
+        input_top_row = QHBoxLayout()
+        input_label = QLabel("Number of upcoming slots:")
+        input_label.setStyleSheet("color: #CBD5E1; font-size: 13px; font-weight: 500;")
+        input_top_row.addWidget(input_label)
 
-        self.slider_count_lbl = QLabel("1 slot")
-        self.slider_count_lbl.setStyleSheet("color: #64B5F6; font-size: 14px; font-weight: bold;")
-        slider_top_row.addWidget(self.slider_count_lbl, alignment=Qt.AlignRight)
-        slider_card_layout.addLayout(slider_top_row)
+        self.periods_summary_lbl = QLabel(f"(1 slot = {self.periods_per_slot} period{'s' if self.periods_per_slot != 1 else ''})")
+        self.periods_summary_lbl.setStyleSheet("color: #64748B; font-size: 12px;")
+        input_top_row.addWidget(self.periods_summary_lbl)
+        input_top_row.addStretch()
+        input_card_layout.addLayout(input_top_row)
 
-        self.slider = QSlider(Qt.Horizontal)
-        self.slider.setRange(1, 20)
-        self.slider.setValue(1)
-        self.slider.setCursor(QCursor(Qt.PointingHandCursor))
-        self.slider.valueChanged.connect(self._on_slider_change)
-        slider_card_layout.addWidget(self.slider)
+        # Stepper Row
+        stepper_row = QHBoxLayout()
+        stepper_row.setSpacing(12)
 
-        # Quick min/max indicators below slider
-        scale_row = QHBoxLayout()
-        scale_min = QLabel("1 slot")
-        scale_min.setStyleSheet("color: #64748B; font-size: 11px;")
-        scale_row.addWidget(scale_min)
-        scale_max = QLabel("20 slots")
-        scale_max.setStyleSheet("color: #64748B; font-size: 11px;")
-        scale_row.addWidget(scale_max, alignment=Qt.AlignRight)
-        slider_card_layout.addLayout(scale_row)
+        self.dec_btn = QPushButton("−")
+        self.dec_btn.setProperty("class", "StepperBtn")
+        self.dec_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.dec_btn.clicked.connect(lambda: self._change_slots(-1))
+        stepper_row.addWidget(self.dec_btn)
 
-        layout.addWidget(slider_card)
+        self.slots_spin = QSpinBox()
+        self.slots_spin.setRange(1, 100)
+        self.slots_spin.setValue(1)
+        self.slots_spin.setFixedHeight(38)
+        self.slots_spin.setMinimumWidth(80)
+        self.slots_spin.setAlignment(Qt.AlignCenter)
+        self.slots_spin.setStyleSheet("""
+            QSpinBox {
+                background-color: #12151C;
+                color: #FFFFFF;
+                font-size: 16px;
+                font-weight: bold;
+                border: 1px solid #3B4758;
+                border-radius: 8px;
+            }
+            QSpinBox::up-button, QSpinBox::down-button {
+                width: 0px;
+                border: none;
+            }
+        """)
+        self.slots_spin.valueChanged.connect(self._on_slots_changed)
+        stepper_row.addWidget(self.slots_spin)
+
+        self.inc_btn = QPushButton("+")
+        self.inc_btn.setProperty("class", "StepperBtn")
+        self.inc_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.inc_btn.clicked.connect(lambda: self._change_slots(1))
+        stepper_row.addWidget(self.inc_btn)
+
+        self.slot_unit_lbl = QLabel("slot(s)")
+        self.slot_unit_lbl.setStyleSheet("color: #94A3B8; font-size: 13px; font-weight: bold;")
+        stepper_row.addWidget(self.slot_unit_lbl)
+
+        stepper_row.addStretch()
+        input_card_layout.addLayout(stepper_row)
+
+        # Quick Preset Chips Row
+        presets_row = QHBoxLayout()
+        presets_row.setSpacing(8)
+        preset_title = QLabel("Quick Presets:")
+        preset_title.setStyleSheet("color: #64748B; font-size: 11px; font-weight: 600;")
+        presets_row.addWidget(preset_title)
+
+        for val in [1, 2, 3, 5, 10]:
+            btn = QPushButton(f"{val} slot{'s' if val > 1 else ''}")
+            btn.setProperty("class", "PresetChip")
+            btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.clicked.connect(lambda checked, v=val: self.slots_spin.setValue(v))
+            presets_row.addWidget(btn)
+
+        presets_row.addStretch()
+        input_card_layout.addLayout(presets_row)
+
+        layout.addWidget(input_card)
 
         # 4. Result Projection Card
         self.result_card = QFrame()
@@ -972,17 +1065,15 @@ class WhatIfSimulatorDialog(QDialog):
         # Initial calculation
         self._recalculate()
 
-    def _on_slider_change(self, value: int) -> None:
-        unit = "slot" if value == 1 else "slots"
-        periods_total = value * self.periods_per_slot
-        if self.periods_per_slot > 1:
-            self.slider_count_lbl.setText(f"{value} {unit} ({periods_total} periods)")
-        else:
-            self.slider_count_lbl.setText(f"{value} {unit}")
+    def _change_slots(self, delta: int) -> None:
+        new_val = max(1, min(100, self.slots_spin.value() + delta))
+        self.slots_spin.setValue(new_val)
+
+    def _on_slots_changed(self, value: int) -> None:
         self._recalculate()
 
     def _recalculate(self) -> None:
-        slots = self.slider.value()
+        slots = self.slots_spin.value()
         additional_periods = slots * self.periods_per_slot
         sim_happened = self.current_happened + additional_periods
 

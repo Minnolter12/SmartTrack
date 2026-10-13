@@ -26,6 +26,8 @@ class Course:
         classes_happened: int = 0, 
         total_classes: int = 0, 
         min_attendance: int | None = 75,
+        od_periods: int = 0,
+        ml_periods: int = 0,
     ) -> None:
         self.name = name
         self.periods = periods
@@ -35,6 +37,28 @@ class Course:
         self._classes_happened = classes_happened
         self.total_classes = total_classes
         self.classes_attended = classes_attended
+        self._od_periods = od_periods
+        self._ml_periods = ml_periods
+
+    @property
+    def od_periods(self) -> int:
+        return getattr(self, "_od_periods", 0)
+
+    @od_periods.setter
+    def od_periods(self, value: int) -> None:
+        if value < 0:
+            raise ValueError("On-Duty periods cannot be negative.")
+        self._od_periods = value
+
+    @property
+    def ml_periods(self) -> int:
+        return getattr(self, "_ml_periods", 0)
+
+    @ml_periods.setter
+    def ml_periods(self, value: int) -> None:
+        if value < 0:
+            raise ValueError("Medical leave periods cannot be negative.")
+        self._ml_periods = value
 
     @property
     def total_classes(self) -> int:
@@ -93,13 +117,38 @@ class Course:
         else: 
             raise TypeError("Invalid format type requested.")
 
+    def projected_attendance_percentage(self, format: type = float) -> int | float:
+        """Calculates projected attendance factoring in approved On-Duty (OD) and Medical Leave (ML) periods.
+        Capped at 100%.
+        """
+        if self.classes_happened == 0:
+            raise ZeroDivisionError("No periods have occurred yet; cannot calculate percentage.")
+
+        effective_attended = min(self.classes_happened, self.classes_attended + self.od_periods + self.ml_periods)
+        percentage = (effective_attended / self.classes_happened) * 100
+        if format is int:
+            return int(percentage)
+        elif format is float:
+            return float(f"{percentage:.2f}")
+        else:
+            raise TypeError("Invalid format type requested.")
+
+    def log_od(self, delta_slots: int = 1) -> None:
+        """Add or remove approved OD slots."""
+        periods_to_add = delta_slots * self.periods
+        self.od_periods = max(0, self.od_periods + periods_to_add)
+
+    def log_ml(self, delta_slots: int = 1) -> None:
+        """Add or remove approved Medical Leave slots."""
+        periods_to_add = delta_slots * self.periods
+        self.ml_periods = max(0, self.ml_periods + periods_to_add)
+
     def calculate_safe_leaves(self) -> int:
         if self.classes_happened == 0:
             return 0
         target = self.min_attendance if self.min_attendance is not None else 75
         target_fraction = target / 100
         
-
         max_total_absences = math.floor(self.classes_attended / target_fraction) - self.classes_happened
         if max_total_absences <= 0:
             return 0
@@ -149,6 +198,8 @@ class Course:
             "classes_happened": self.classes_happened,
             "total_classes": self.total_classes,
             "min_attendance": self.min_attendance,
+            "od_periods": self.od_periods,
+            "ml_periods": self.ml_periods,
             "type": self.__class__.__name__,
         }
 
@@ -162,6 +213,8 @@ class Course:
         classes_happened = data.get("classes_happened", 0)
         total_classes = data.get("total_classes", 0)
         min_attendance = data.get("min_attendance", 75)
+        od_periods = data.get("od_periods", 0)
+        ml_periods = data.get("ml_periods", 0)
 
         if c_type == "TheoryCourses":
             return TheoryCourses(
@@ -172,6 +225,8 @@ class Course:
                 classes_happened=classes_happened,
                 total_classes=total_classes,
                 min_attendance=min_attendance,
+                od_periods=od_periods,
+                ml_periods=ml_periods,
             )
         elif c_type == "LabCourses":
             return LabCourses(
@@ -182,6 +237,8 @@ class Course:
                 classes_happened=classes_happened,
                 total_classes=total_classes,
                 min_attendance=min_attendance,
+                od_periods=od_periods,
+                ml_periods=ml_periods,
             )
         else:
             return Course(
@@ -192,6 +249,8 @@ class Course:
                 classes_happened=classes_happened,
                 total_classes=total_classes,
                 min_attendance=min_attendance,
+                od_periods=od_periods,
+                ml_periods=ml_periods,
             )
 
 
